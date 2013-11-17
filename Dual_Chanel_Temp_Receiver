@@ -1,0 +1,155 @@
+/* This sketch receives a packet of data from another Jeenode (Arduino clone)
+ via a RFMB12 868MHz Transciever, the packet contains two temperature values and
+ the Battery level for the transmitter (powered directly from 3.7V lithium not via
+ the regulator), it also displays the recievers battery voltage.
+ The sketch waits for a transmission and then sleeps for 53 seconds and wakes up 
+ waiting for another transmission then sleeps again after reception.
+ Based on this blog post
+ http://gadjetsblog.blogspot.co.uk/2012/05/remote-temp-sensing-with-glcd-and.html
+ The display used is a 128x64 pixel graphical LCD.
+ Note, this sketch requires the GLCDlib library from JeeLabs
+ https://github.com/jcw/glcdlib
+ */
+
+#include <GLCD_ST7565.h>
+#include <JeeLib.h>
+#include "utility/font_courB18.h"
+#include "utility/font_clR6x8.h"
+#include <avr/sleep.h>
+volatile bool adcDone;
+
+// this must be added since we're using the watchdog for low power waiting.
+ISR(WDT_vect) { 
+  Sleepy::watchdogEvent(); 
+}
+ISR(ADC_vect) { 
+  adcDone = true; 
+}
+GLCD_ST7565 glcd;
+//byte index;
+char line[5];
+int beat;
+
+// Define payload stucture to contain recieved values, must match the structure in the transmitter code.
+struct {
+  float InTemp;  //First temp digit
+  float OutTemp;  //First temp digit
+  byte BattLevel; //Battery level using VCCread
+  byte lobat :
+  1;  // supply voltage dropped under 3.1V: 0..1
+} 
+payload;
+
+static byte vccRead (byte count =4) {
+  set_sleep_mode(SLEEP_MODE_ADC);
+  ADMUX = bit(REFS0) | 14; // use VCC and internal bandgap
+  bitSet(ADCSRA, ADIE);
+  while (count-- > 0) {
+    adcDone = false;
+    while (!adcDone)
+      sleep_mode();
+  }
+  bitClear(ADCSRA, ADIE);  
+  // convert ADC readings to fit in one byte, i.e. 20 mV steps:
+  //  1.0V = 0, 1.8V = 40, 3.3V = 115, 5.0V = 200, 6.0V = 250
+  return (55U * 1023U) / (ADC + 1) - 50;
+}
+
+void setup () {
+  //Serial.begin(57600);
+  rf12_initialize(2, RF12_868MHZ, 212);
+
+  glcd.begin();
+  glcd.backLight(0);
+  glcd.drawLine(63,0,63,63,1);
+  glcd.drawLine(0,31,127,31,1);
+  glcd.setFont(font_clR6x8);
+  glcd.drawRect(0,0,128,64,1);
+  glcd.drawString(0,2," On-board    Probe");
+  glcd.drawString(0,33," Loc Batt  Rem Batt");
+  glcd.setFont(font_courB18);
+  glcd.refresh();
+}
+
+void loop () {
+  delay(500);
+  if (rf12_recvDone() && rf12_crc == 0) {
+    if (rf12_len == sizeof payload) {
+      memcpy(&payload, (void*) rf12_data, sizeof payload);
+      // Format the received data and put into the buffer 'line'
+      dtostrf(payload.InTemp,3,1,line);
+      // Send temp to serial
+      //Serial.print("Inside Temp,");Serial.println(line);
+      // Draw white rectangle over the displayed text to allow new value to be written
+      glcd.fillRect(11,11,51,20,0);
+      // Send buffer 'line' to the display RAM
+      glcd.drawString(11,11,line);
+      //glcd.drawString(5,11,line);
+      // repeat for other temp's                  
+      if(payload.OutTemp > -50){
+        dtostrf(payload.OutTemp,3,1,line);
+      }
+      else
+      {
+        dtostrf(0,1,1,line);
+      }
+
+      //Serial.print("Water Temp,");Serial.println(line);
+      glcd.fillRect(70,11,51,20,0); //clear temp for next value
+      glcd.drawString(70,11,line);
+      // Battery level
+      dtostrf(payload.BattLevel*0.026,3,2,line); //battery level with 3 digits and no decimal places
+      //Serial.print("Batt. Level,");Serial.println(line);
+      glcd.fillRect(67,42,51,20,0); //clear temp for next value
+      glcd.drawString(67,42,line);
+      // Local Battery level
+      dtostrf(vccRead()*0.026,3,2,line); //battery level with 3 digits and no decimal places
+      //Serial.print("Batt. Level,");Serial.println(line);
+      glcd.fillRect(9,42,51,20,0); //clear temp for next value
+      glcd.drawString(9,42,line);       
+
+      Pulse();
+      // If the battery level falls below 115, 105*0.026 = 3V set lo batt symbol
+      if(payload.BattLevel < 115){
+        LowBatt();
+      }
+      // Transfer display RAM to the screen.       
+      glcd.refresh();
+      delay(100);
+
+      //Put all to sleep for 58 seconds
+      //Write an A to the top right of the screen to indicate that the uP is asleep
+      glcd.setFont(font_clR6x8);
+      glcd.drawString(120,2,"S");
+      glcd.drawString(120,2," ");
+      glcd.refresh();
+      //glcd.setFont(font_courB18);
+
+      rf12_sleep(RF12_SLEEP);
+      Sleepy::loseSomeTime(50000); //Put uP to sleep for 58 sec
+      rf12_sleep(RF12_WAKEUP); // Wake up in time for the next message ???
+    }
+  }
+}
+
+void Pulse (){
+  //show a rectangle in the middle of the screen when a message is received
+  if (beat == 1){
+    glcd.fillRect(61,29,5,5,0); //erase large rectangle
+    glcd.drawRect(62,30,3,3,1); //Draw small open rectangle
+    beat =0;
+  }
+  else {
+    glcd.fillRect(62,30,3,3,0); //Erase small rectangle
+    glcd.drawRect(61,29,5,5,1); //Draw large open rectangle
+    beat =1;
+  }
+  glcd.refresh();
+}
+void LowBatt(){
+  //Draw a battery symbol for low battery warning
+  glcd.fillRect(55,4,7,4,1);
+  glcd.fillRect(56,3,1,1,1);
+  glcd.fillRect(60,3,1,1,1);
+  glcd.refresh();
+}
