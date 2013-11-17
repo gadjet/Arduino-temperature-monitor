@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Arduino-temperature-monitor by gadjet</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Arduino-temperature-monitor</h1>
+        <p>Dual channel temperature monitor</p>
+
+        <p class="view"><a href="https://github.com/gadjet/Arduino-temperature-monitor">View the Project on GitHub <small>gadjet/Arduino-temperature-monitor</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/gadjet/Arduino-temperature-monitor/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/gadjet/Arduino-temperature-monitor/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/gadjet/Arduino-temperature-monitor">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a name="arduino-jeenode-dual-channel-temperature-monitor" class="anchor" href="#arduino-jeenode-dual-channel-temperature-monitor"><span class="octicon octicon-link"></span></a>Arduino (Jeenode) dual channel temperature monitor</h1>
+
+<p>I put together this project so I could monitor the temperature of my lean-to green house I made to protect some plants from the frost this winter.</p>
+
+<h2>
+<a name="parts" class="anchor" href="#parts"><span class="octicon octicon-link"></span></a>Parts</h2>
+
+<p>The project uses a Jeenode with a RFM12B 868MHz transceiver, a DS18B20 temperature sensor (inside lean-to) and a probe version of the DS18B20 (outside temp.)
+The display is a 128x64 pixel mono Graphical LCD.
+<img src="https://dl.dropboxusercontent.com/u/2253850/dualTempMonitor.jpg" alt="Dual Temp monitor LCD">
+Both transmitter and receiver use a 1500 mah lithium battery cell to power so both use powersaving code to extend battery life.</p>
+
+<h2>
+<a name="details" class="anchor" href="#details"><span class="octicon octicon-link"></span></a>Details</h2>
+
+<p>The transmitter sends out the two temp's and battery level every 60 seconds sleeping in between transmissions, the receiver waits for the first transmission then updates the display with the temp's and remote battery level then updates the local battery level than sleeps for 53 seconds before waking up for the next transmission.</p>
+
+<p>NOTE. to get the battery levels both tansmitter and receiver must be powered straight to VCC and not via the voltage regulator otherwise the voltage would stay at 3.3V until the battery died.</p>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/gadjet">gadjet</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
