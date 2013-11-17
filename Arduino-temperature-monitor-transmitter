@@ -1,0 +1,117 @@
+#include <JeeLib.h>
+#include <Ports.h>
+#include <RF12.h>
+#include <RF12sio.h>
+#include <Wire.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <avr/sleep.h>
+
+volatile bool adcDone;
+
+// this must be added since we're using the watchdog for low power waiting.
+ISR(WDT_vect) { 
+  Sleepy::watchdogEvent(); 
+}
+ISR(ADC_vect) { 
+  adcDone = true; 
+}
+
+#define ONE_WIRE_BUS 5  // DS18S20 Temperature chip i/o on pin 5 - Port 2
+#define TEMPERATURE_PRECISION 9
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+// Insert the ID of your temp sensor here, for the sketch, visit here
+// http://www.hacktronics.com/Tutorials/arduino-1-wire-address-finder.html
+DeviceAddress insideThermometer = { 
+  0x28, 0x2F, 0x8A, 0xEE, 0x02, 0x00, 0x00, 0xE9 }; // none probe
+DeviceAddress outsideThermometer = { 
+  0x28, 0x60, 0x3A, 0x10, 0x03, 0x00, 0x00, 0x38 }; //External probe
+
+float inTempC;  //store temp from sensors
+float outTempC; //store temp from sensors
+
+//MilliTimer sendTimer;
+
+static byte vccRead (byte count =4) {
+  set_sleep_mode(SLEEP_MODE_ADC);
+  ADMUX = bit(REFS0) | 14; // use VCC and internal bandgap
+  bitSet(ADCSRA, ADIE);
+  while (count-- > 0) {
+    adcDone = false;
+    while (!adcDone)
+      sleep_mode();
+  }
+  bitClear(ADCSRA, ADIE);  
+  // convert ADC readings to fit in one byte, i.e. 20 mV steps:
+  //  1.0V = 0, 1.8V = 40, 3.3V = 115, 5.0V = 200, 6.0V = 250
+  return (55U * 1023U) / (ADC + 1) - 50;
+}
+
+typedef struct { 
+  float InTemp;  //First temp digit
+  float OutTemp;  //First temp digit
+  byte BattLevel; //Battery level using VCCread
+byte lobat :  1;  // supply voltage dropped under 3.1V: 0..1
+} 
+Payload,*pPayload;
+
+Payload inData, outData;
+byte pendingOutput;
+
+void setup () {
+
+  // call rf12_initialize() or rf12_config()
+  rf12_initialize(1, RF12_868MHZ, 212); //tx
+
+  //Serial.begin(57600);
+  // Start the temp sensors    
+  sensors.begin();
+  Wire.begin();
+}
+
+static byte produceOutData () {
+  sensors.requestTemperatures();// Trigger all the temp sensors to carry out a temp. conversion
+
+  // ----
+  inTempC = sensors.getTempC(insideThermometer);   //read in temp.  Could miss this out and put directly below
+  outTempC = sensors.getTempC(outsideThermometer);   //read in temp 
+  outData.InTemp = inTempC; 
+  outData.OutTemp = outTempC; 
+  outData.lobat = rf12_lowbat();
+  outData.BattLevel = vccRead();
+  return 1;
+}
+
+void loop () {
+
+  rf12_sleep(RF12_SLEEP);
+  Sleepy::loseSomeTime(60000); //Put uP to sleep for 60 sec
+  rf12_sleep(RF12_WAKEUP);
+
+  if (rf12_recvDone() && rf12_crc == 0 && rf12_len == sizeof inData) {
+    memcpy(&inData, (byte*) rf12_data, sizeof inData);
+    // optional: rf12_recvDone(); // re-enable reception right away
+    }
+  pendingOutput = produceOutData();
+
+  if (pendingOutput && rf12_canSend()) {
+    rf12_sendStart(0, &outData, sizeof outData, 2);
+    // optional: rf12_sendWait(2); // wait for send to finish
+    pendingOutput = 0;
+  }
+  // Uncomment if you want to send serial data to Megunolink
+  // Serial.print("{TIMEPLOT:");
+  //Serial.print("Temperatures");
+  // Serial.print("|data|");
+  // Serial.print("Inside Temp");
+  // Serial.print("|T|");
+  // Serial.print(inTempC,3);
+  // Serial.print("}");
+  // Serial.print("Outside Temp: ");
+  // Serial.println(outTempC);
+  delay(100);
+}
+
